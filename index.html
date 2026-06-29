@@ -285,6 +285,24 @@
     .sel-orange { border-color: #e67e22; background: #fef3e8; }
     .sel-yellow { border-color: #d4ac0d; background: #fef9e6; }
 
+    .photo-add-btn {
+      width: 100%; padding: 12px 14px; border-radius: 10px;
+      border: 1.5px dashed var(--border-strong); background: var(--surface-2);
+      font-size: 14px; font-weight: 500; color: var(--text-2);
+      display: flex; align-items: center; gap: 8px;
+      cursor: pointer; font-family: inherit;
+      transition: border-color 0.15s, background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .photo-add-btn:active { background: var(--red-light); border-color: var(--red); }
+    .photo-add-btn i { font-size: 20px; color: var(--red); }
+    .photo-thumb-del {
+      position: absolute; top: 3px; right: 3px;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: rgba(0,0,0,0.55); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; cursor: pointer; line-height: 1;
+    }
     .form-label { font-size: 12px; color: var(--text-3); margin-bottom: 6px; }
     .form-input {
       width: 100%; padding: 12px 14px; border-radius: 10px;
@@ -775,7 +793,16 @@
       <div class="form-label">Адрес или ориентир</div>
       <input type="text" class="form-input" id="add-address" placeholder="ул. Ленина, 22">
 
-      <div class="form-label">Комментарий (необязательно)</div>
+      <div class="form-label">Фото</div>
+      <input type="file" id="photo-input" accept="image/*" multiple style="display:none" onchange="handlePhotos(this)">
+      <div id="photo-preview-row" style="display:none;gap:8px;margin-bottom:14px;flex-wrap:wrap"></div>
+      <button type="button" class="photo-add-btn" id="photo-add-btn" onclick="document.getElementById('photo-input').click()">
+        <i class="ti ti-camera"></i>
+        <span>Добавить фото</span>
+        <span id="photo-hint" style="font-size:10px;color:var(--text-3);margin-left:auto">камера или галерея</span>
+      </button>
+
+      <div class="form-label" style="margin-top:14px">Комментарий (необязательно)</div>
       <input type="text" class="form-input" id="add-comment" placeholder="Опишите повреждение">
 
       <button class="report-btn" onclick="submitMarker()">
@@ -991,7 +1018,10 @@ function shareMarker() {
 /* ── ДОБАВИТЬ ОТМЕТКУ ── */
 document.getElementById('add-btn').onclick = () => document.getElementById('add-modal').classList.add('open');
 
-function closeAddModal() { document.getElementById('add-modal').classList.remove('open'); }
+function closeAddModal() {
+  document.getElementById('add-modal').classList.remove('open');
+  resetPhotos();
+}
 
 function selType(t) {
   selType_ = t;
@@ -1032,9 +1062,9 @@ function submitMarker() {
   item.innerHTML = `<div class="hdot" style="background:${col}"></div><div class="htext"><div class="htitle">${lbl} — ${addr}</div><div class="hsub">0 подтверждений</div></div><div class="htime">сейчас</div>`;
   document.getElementById('hist-list').prepend(item);
 
-  closeAddModal();
   document.getElementById('add-address').value = '';
   document.getElementById('add-comment').value = '';
+  closeAddModal();
   toast('Отметка добавлена на карту!');
 
   if (userMarks === 10) setTimeout(() => toast('Разблокирована награда: −2 ₽/литр на Газпромнефть!'), 600);
@@ -1048,6 +1078,69 @@ function updateProgress() {
   const left = Math.max(50 - userMarks, 0);
   document.getElementById('prog-tip').textContent = left > 0
     ? `ещё ${left} — и награда ваша` : '🎉 Награда разблокирована!';
+}
+
+/* ── ФОТО ── */
+let selectedPhotos = []; // массив { url, file }
+
+function handlePhotos(input) {
+  const files = Array.from(input.files);
+  if (!files.length) return;
+
+  const remaining = 3 - selectedPhotos.length;
+  if (remaining <= 0) { toast('Максимум 3 фото'); return; }
+  const toAdd = files.slice(0, remaining);
+
+  toAdd.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      selectedPhotos.push({ url: e.target.result, file });
+      renderPhotoPreview();
+    };
+    reader.readAsDataURL(file);
+  });
+
+  input.value = ''; // сброс, чтобы можно было выбрать те же файлы повторно
+}
+
+function renderPhotoPreview() {
+  const row = document.getElementById('photo-preview-row');
+  const btn = document.getElementById('photo-add-btn');
+  const hint = document.getElementById('photo-hint');
+
+  row.innerHTML = '';
+  row.style.display = selectedPhotos.length ? 'flex' : 'none';
+
+  selectedPhotos.forEach((p, i) => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative;width:72px;height:72px;border-radius:8px;overflow:visible;flex-shrink:0';
+
+    const img = document.createElement('img');
+    img.src = p.url;
+    img.style.cssText = 'width:72px;height:72px;object-fit:cover;border-radius:8px;border:0.5px solid var(--border-strong)';
+
+    const del = document.createElement('div');
+    del.className = 'photo-thumb-del';
+    del.textContent = '×';
+    del.onclick = () => { selectedPhotos.splice(i, 1); renderPhotoPreview(); };
+
+    wrap.append(img, del);
+    row.appendChild(wrap);
+  });
+
+  if (selectedPhotos.length < 3) {
+    btn.style.display = 'flex';
+    hint.textContent = selectedPhotos.length ? `ещё ${3 - selectedPhotos.length}` : 'камера или галерея';
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+function resetPhotos() {
+  selectedPhotos = [];
+  renderPhotoPreview();
+  document.getElementById('photo-add-btn').style.display = 'flex';
+  document.getElementById('photo-hint').textContent = 'камера или галерея';
 }
 
 /* ── ПРОМОКОД ── */
