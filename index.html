@@ -12,7 +12,7 @@
   <!-- иконка — упрощённая версия логотипа -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c0392b'/%3E%3Cpolygon points='7,28 25,28 20,11 12,11' fill='%23fff' opacity='0.92'/%3E%3Cellipse cx='16' cy='22' rx='5.5' ry='3' fill='%23c0392b'/%3E%3Cellipse cx='16' cy='21.2' rx='4' ry='2' fill='%23700'/%3E%3Crect x='14.5' y='12.5' width='3' height='5' rx='1.5' fill='%23f5e090' opacity='0.85'/%3E%3C/svg%3E">
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@9.2.4/ol.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.26.0/dist/tabler-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
@@ -146,8 +146,15 @@
     }
     .report-btn:active { opacity: 0.9; }
 
-    /* Кастомный маркер Leaflet */
-    .custom-marker { background: none; border: none; }
+    /* OpenLayers — убираем дефолтный контрол rotate */
+    .ol-rotate { display: none; }
+    .ol-attribution { font-size: 10px; }
+
+    /* HTML-маркеры через ol.Overlay */
+    .ol-marker {
+      display: flex; flex-direction: column; align-items: center;
+      cursor: pointer; transform: translate(-50%, -100%);
+    }
     .marker-pin {
       width: 30px; height: 30px;
       border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
@@ -159,6 +166,11 @@
       width: 6px; height: 6px; border-radius: 50%;
       background: rgba(0,0,0,0.22); margin: 3px auto 0;
     }
+    .ol-marker.active .marker-pin {
+      width: 36px; height: 36px;
+      box-shadow: 0 0 0 10px rgba(192,57,43,0.18), 0 3px 10px rgba(0,0,0,0.35);
+    }
+    .ol-marker.active .marker-pin i { font-size: 16px; }
 
     /* ── POPUP SHEET ── */
     #popup-overlay {
@@ -792,7 +804,7 @@
 <!-- ══════════════════════════════
      СКРИПТЫ
 ══════════════════════════════ -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ol@9.2.4/dist/ol.js"></script>
 <script>
 
 /* ── ДАННЫЕ ── */
@@ -845,40 +857,60 @@ const DB = [
 ];
 
 /* ── СОСТОЯНИЕ ── */
-let map, activeId = null, selType_ = 'pothole', userMarks = 43;
+let map, olView, activeId = null, selType_ = 'pothole', userMarks = 43;
+const overlays = []; // храним OL Overlays для маркеров
 
-/* ── КАРТА ── */
+/* ── КАРТА (OpenLayers + тайлы 2GIS) ── */
 function initMap() {
-  map = L.map('map', { zoomControl:false, attributionControl:true })
-    .setView([54.9900, 82.9220], 13);
+  olView = new ol.View({
+    center: ol.proj.fromLonLat([82.9220, 54.9900]),
+    zoom: 13,
+    minZoom: 5,
+    maxZoom: 19
+  });
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '© OpenStreetMap'
-  }).addTo(map);
-
-  L.control.zoom({ position:'topright' }).addTo(map);
+  map = new ol.Map({
+    target: 'map',
+    layers: [
+      new ol.layer.Tile({
+        source: new ol.source.XYZ({
+          urls: [
+            'https://tile0.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1',
+            'https://tile1.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1',
+            'https://tile2.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1',
+          ],
+          attributions: '© 2GIS',
+          maxZoom: 19
+        })
+      })
+    ],
+    view: olView,
+    controls: ol.control.defaults.defaults({ zoom: true, rotate: false, attribution: true })
+  });
 
   DB.forEach(putMarker);
+
+  /* клик по карте вне маркера — закрывает попап */
   map.on('click', () => closePopup());
 }
 
-function makeIcon(type) {
-  const col = { pothole:'#c0392b', damaged:'#e67e22', bump:'#d4ac0d' }[type] || '#c0392b';
-  const ico = { pothole:'ti-alert-triangle', damaged:'ti-road', bump:'ti-wave-sine' }[type] || 'ti-alert-triangle';
-  return L.divIcon({
-    className: 'custom-marker',
-    html: `<div class="marker-pin" style="background:${col}"><i class="ti ${ico}"></i></div><div class="marker-shadow"></div>`,
-    iconSize: [30, 40],
-    iconAnchor: [15, 40],
-    popupAnchor: [0, -42]
-  });
-}
+const COL = { pothole:'#c0392b', damaged:'#e67e22', bump:'#d4ac0d' };
+const ICO = { pothole:'ti-alert-triangle', damaged:'ti-road', bump:'ti-wave-sine' };
 
 function putMarker(d) {
-  L.marker([d.lat, d.lng], { icon: makeIcon(d.type) })
-    .addTo(map)
-    .on('click', e => { L.DomEvent.stopPropagation(e); openPopup(d); });
+  const el = document.createElement('div');
+  el.className = 'ol-marker';
+  el.innerHTML = `<div class="marker-pin" style="background:${COL[d.type]||'#c0392b'}"><i class="ti ${ICO[d.type]||'ti-alert-triangle'}"></i></div><div class="marker-shadow"></div>`;
+  el.addEventListener('click', e => { e.stopPropagation(); openPopup(d); });
+
+  const overlay = new ol.Overlay({
+    element: el,
+    position: ol.proj.fromLonLat([d.lng, d.lat]),
+    positioning: 'bottom-center',
+    stopEvent: true
+  });
+  map.addOverlay(overlay);
+  overlays.push({ id: d.id, overlay, el });
 }
 
 /* ── НАВИГАЦИЯ ── */
@@ -887,12 +919,14 @@ function showScreen(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('screen-' + name).classList.add('active');
   document.querySelector(`[data-sc="${name}"]`).classList.add('active');
-  if (name === 'map') setTimeout(() => map && map.invalidateSize(), 60);
+  if (name === 'map') setTimeout(() => map && map.updateSize(), 60);
 }
 
 /* ── ПОПАП ── */
 function openPopup(d) {
   activeId = d.id;
+  /* подсвечиваем активный маркер */
+  overlays.forEach(o => o.el.classList.toggle('active', o.id === d.id));
 
   const typeLabel = { pothole:'Яма', damaged:'Разбитый участок', bump:'Ухаб' };
   document.getElementById('pp-type').textContent = typeLabel[d.type] || d.type;
@@ -927,6 +961,7 @@ function openPopup(d) {
 
 function closePopup() {
   document.getElementById('popup-overlay').classList.remove('open');
+  overlays.forEach(o => o.el.classList.remove('active'));
   activeId = null;
 }
 
@@ -969,11 +1004,11 @@ function selType(t) {
 
 function submitMarker() {
   const addr = document.getElementById('add-address').value.trim() || 'Новосибирск';
-  const c = map.getCenter();
+  const centerLonLat = ol.proj.toLonLat(olView.getCenter());
   const newD = {
     id: Date.now(),
-    lat: c.lat + (Math.random()-.5)*0.006,
-    lng: c.lng + (Math.random()-.5)*0.006,
+    lat: centerLonLat[1] + (Math.random()-.5)*0.006,
+    lng: centerLonLat[0] + (Math.random()-.5)*0.006,
     type: selType_,
     title: { pothole:'Яма на проезжей части', damaged:'Разбитый участок', bump:'Ухаб' }[selType_],
     addr, sev:'Новое', size:'—', depth:'—', date:'только что', lane:'—', conf:0, comments:[]
@@ -1035,7 +1070,10 @@ function shareApp() {
 document.getElementById('locate-btn').onclick = () => {
   if (!navigator.geolocation) return toast('Геолокация недоступна в браузере');
   navigator.geolocation.getCurrentPosition(
-    p => map.setView([p.coords.latitude, p.coords.longitude], 16),
+    p => olView.animate({
+      center: ol.proj.fromLonLat([p.coords.longitude, p.coords.latitude]),
+      zoom: 16, duration: 600
+    }),
     () => toast('Не удалось определить местоположение')
   );
 };
