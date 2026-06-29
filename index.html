@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Дорог.нет">
+  <title>Дорог.нет</title>
+
+  <!-- иконка — упрощённая версия логотипа -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c0392b'/%3E%3Cpolygon points='7,28 25,28 20,11 12,11' fill='%23fff' opacity='0.92'/%3E%3Cellipse cx='16' cy='22' rx='5.5' ry='3' fill='%23c0392b'/%3E%3Cellipse cx='16' cy='21.2' rx='4' ry='2' fill='%23700'/%3E%3Crect x='14.5' y='12.5' width='3' height='5' rx='1.5' fill='%23f5e090' opacity='0.85'/%3E%3C/svg%3E">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.26.0/dist/tabler-icons.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --red: #c0392b;
+      --red-light: #fde8e6;
+      --red-border: #f0c4be;
+      --orange: #e67e22;
+      --yellow: #d4ac0d;
+      --bg: #f0f0ea;
+      --surface: #ffffff;
+      --surface-2: #f5f5f2;
+      --text: #1e1a16;
+      --text-2: #6b6560;
+      --text-3: #9a9590;
+      --border: rgba(0,0,0,0.09);
+      --border-strong: rgba(0,0,0,0.15);
+      --radius: 12px;
+      --tab-h: 62px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    /* ── APP SHELL ── */
+    #app {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      position: relative; overflow: hidden;
+    }
+
+    /* ── SCREENS ── */
+    .screen {
+      position: absolute;
+      inset: 0;
+      bottom: var(--tab-h);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease;
+    }
+    .screen.active { opacity: 1; pointer-events: all; }
+    #screen-map { overflow: hidden; }
+
+    /* ── TAB BAR ── */
+    #tabbar {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: var(--tab-h);
+      background: var(--surface);
+      border-top: 0.5px solid var(--border-strong);
+      display: flex; z-index: 1000;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .tab {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 3px; cursor: pointer; color: var(--text-3);
+      transition: color 0.15s; -webkit-tap-highlight-color: transparent;
+      padding-top: 6px;
+    }
+    .tab.active { color: var(--red); }
+    .tab i { font-size: 23px; }
+    .tab span { font-size: 10px; font-weight: 500; }
+
+    /* ── MAP ── */
+    #map { position: absolute; inset: 0; }
+
+    .map-top {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 12px 12px 0; z-index: 500;
+    }
+    .search-box {
+      background: var(--surface); border-radius: 24px;
+      border: 0.5px solid var(--border-strong);
+      padding: 10px 16px;
+      display: flex; align-items: center; gap: 8px;
+      font-size: 14px; color: var(--text-3);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .search-box i { font-size: 17px; }
+
+    .map-fabs {
+      position: absolute; right: 12px; bottom: 228px;
+      z-index: 500; display: flex; flex-direction: column; gap: 8px;
+    }
+    .fab {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: var(--surface); border: 0.5px solid var(--border-strong);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 19px; color: var(--text-2);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .map-bottom {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: var(--surface);
+      border-radius: 20px 20px 0 0;
+      border-top: 0.5px solid var(--border-strong);
+      padding: 10px 16px 16px; z-index: 500;
+    }
+    .drag-handle {
+      width: 36px; height: 4px; background: var(--border-strong);
+      border-radius: 4px; margin: 0 auto 12px;
+    }
+    .legend-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+    .stats-mini { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .smc { background: var(--surface-2); border-radius: 10px; padding: 8px; text-align: center; border: 0.5px solid var(--border); }
+    .smc-num { font-size: 19px; font-weight: 600; color: var(--text); display: block; }
+    .smc-label { font-size: 10px; color: var(--text-3); }
+
+    .report-btn {
+      background: var(--red); color: #fff; border: none;
+      border-radius: 14px; padding: 14px; width: 100%;
+      font-size: 15px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      cursor: pointer; font-family: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .report-btn:active { opacity: 0.9; }
+
+    /* Кастомный маркер Leaflet */
+    .custom-marker { background: none; border: none; }
+    .marker-pin {
+      width: 30px; height: 30px;
+      border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+    }
+    .marker-pin i { transform: rotate(45deg); font-size: 13px; color: #fff; }
+    .marker-shadow {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: rgba(0,0,0,0.22); margin: 3px auto 0;
+    }
+
+    /* ── POPUP SHEET ── */
+    #popup-overlay {
+      position: absolute; inset: 0; bottom: var(--tab-h);
+      z-index: 800; pointer-events: none; opacity: 0;
+      transition: opacity 0.22s ease;
+    }
+    #popup-overlay.open { pointer-events: all; opacity: 1; }
+    .popup-dim { position: absolute; inset: 0; background: rgba(0,0,0,0.3); }
+    .popup-sheet {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: var(--surface); border-radius: 20px 20px 0 0;
+      transform: translateY(100%);
+      transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+      max-height: 90%; overflow-y: auto;
+    }
+    #popup-overlay.open .popup-sheet { transform: translateY(0); }
+
+    .popup-drag { width: 36px; height: 4px; background: var(--border-strong); border-radius: 4px; margin: 12px auto 0; }
+
+    .popup-photos { display: flex; gap: 8px; padding: 12px 16px 0; }
+    .photo-main {
+      width: 145px; height: 100px; border-radius: 10px;
+      overflow: hidden; flex-shrink: 0; position: relative; background: #5a5040;
+    }
+    .photo-main svg { width: 100%; height: 100%; }
+    .photo-count {
+      position: absolute; bottom: 6px; right: 6px;
+      background: rgba(0,0,0,0.55); color: #fff;
+      font-size: 10px; padding: 2px 7px; border-radius: 6px;
+    }
+    .photo-side { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+    .photo-thumb { flex: 1; border-radius: 8px; overflow: hidden; background: #b0a090; min-height: 46px; }
+    .photo-thumb svg { width: 100%; height: 100%; display: block; }
+
+    .popup-body { padding: 14px 16px 0; }
+    .badge-row { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+    .badge { font-size: 11px; padding: 4px 10px; border-radius: 20px; font-weight: 500; }
+    .badge-red { background: #fde8e6; color: #9b2b1f; }
+    .badge-gray { background: var(--surface-2); color: var(--text-2); border: 0.5px solid var(--border-strong); }
+    .badge-green { background: #e6f4ea; color: #1e6e35; }
+
+    .popup-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .popup-addr { font-size: 12px; color: var(--text-3); display: flex; align-items: center; gap: 4px; margin-bottom: 14px; }
+    .popup-addr i { font-size: 13px; color: var(--red); }
+
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    .meta-label { font-size: 10px; color: var(--text-3); margin-bottom: 2px; }
+    .meta-value { font-size: 12px; color: var(--text); font-weight: 500; display: flex; align-items: center; gap: 4px; }
+    .meta-value i { font-size: 13px; color: var(--text-3); }
+
+    .divider { height: 0.5px; background: var(--border-strong); margin: 12px 0; }
+    .comments-title { font-size: 12px; color: var(--text-3); margin-bottom: 10px; }
+    .comment { display: flex; gap: 8px; margin-bottom: 12px; }
+    .c-avatar {
+      width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 600; flex-shrink: 0;
+    }
+    .av-blue { background: #d0e8f8; color: #1a5a8a; }
+    .av-green { background: #d4ead8; color: #1e5e30; }
+    .av-purple { background: #e8d8f8; color: #5a1a8a; }
+    .c-bubble {
+      background: var(--surface-2); border-radius: 4px 12px 12px 12px;
+      border: 0.5px solid var(--border); padding: 8px 10px; flex: 1;
+    }
+    .c-author { font-size: 10px; font-weight: 600; color: var(--text-2); margin-bottom: 3px; }
+    .c-text { font-size: 12px; color: var(--text); line-height: 1.5; }
+    .c-time { font-size: 9px; color: var(--text-3); margin-top: 4px; }
+
+    .popup-actions { display: flex; gap: 8px; padding: 12px 16px 28px; }
+    .btn-sec {
+      flex: 1; background: var(--surface-2); border: 0.5px solid var(--border-strong);
+      border-radius: 12px; padding: 12px; font-size: 13px; font-weight: 500;
+      color: var(--text); display: flex; align-items: center; justify-content: center;
+      gap: 6px; cursor: pointer; font-family: inherit;
+    }
+    .btn-prime {
+      flex: 2; background: var(--red); border: none; border-radius: 12px;
+      padding: 12px; font-size: 13px; font-weight: 600; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      gap: 6px; cursor: pointer; font-family: inherit;
+      transition: background 0.2s;
+    }
+
+    /* ── ADD MODAL ── */
+    #add-modal {
+      position: absolute; inset: 0; bottom: var(--tab-h);
+      z-index: 900; pointer-events: none; opacity: 0; transition: opacity 0.22s;
+    }
+    #add-modal.open { opacity: 1; pointer-events: all; }
+    .modal-dim { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
+    .modal-sheet {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: var(--surface); border-radius: 20px 20px 0 0;
+      padding: 12px 16px 32px;
+      transform: translateY(100%);
+      transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+    }
+    #add-modal.open .modal-sheet { transform: translateY(0); }
+    .modal-title { font-size: 17px; font-weight: 600; margin: 10px 0 18px; text-align: center; }
+
+    .type-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 18px; }
+    .type-btn {
+      border-radius: 12px; border: 1.5px solid var(--border-strong);
+      padding: 14px 8px; text-align: center; cursor: pointer;
+      transition: all 0.15s; -webkit-tap-highlight-color: transparent;
+    }
+    .type-btn i { font-size: 24px; display: block; margin-bottom: 5px; }
+    .type-btn span { font-size: 11px; font-weight: 500; color: var(--text); }
+    .sel-red { border-color: var(--red); background: var(--red-light); }
+    .sel-orange { border-color: #e67e22; background: #fef3e8; }
+    .sel-yellow { border-color: #d4ac0d; background: #fef9e6; }
+
+    .form-label { font-size: 12px; color: var(--text-3); margin-bottom: 6px; }
+    .form-input {
+      width: 100%; padding: 12px 14px; border-radius: 10px;
+      border: 0.5px solid var(--border-strong); background: var(--surface-2);
+      font-size: 14px; font-family: inherit; color: var(--text);
+      margin-bottom: 14px; outline: none;
+    }
+    .form-input:focus { border-color: var(--red); }
+
+    /* ── STATS SCREEN ── */
+    #screen-stats { background: var(--bg); }
+    .screen-header { background: var(--surface); padding: 16px 16px 14px; border-bottom: 0.5px solid var(--border-strong); }
+    .screen-title { font-size: 22px; font-weight: 600; }
+    .stats-body { padding: 16px; }
+
+    .big-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    .big-card { background: var(--surface); border-radius: var(--radius); border: 0.5px solid var(--border); padding: 14px; }
+    .big-card.red { background: #fdf0ee; border-color: var(--red-border); }
+    .big-num { font-size: 30px; font-weight: 600; display: block; line-height: 1.1; }
+    .big-card.red .big-num { color: var(--red); }
+    .big-lbl { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+
+    .chart-card { background: var(--surface); border-radius: var(--radius); border: 0.5px solid var(--border); padding: 14px; margin-bottom: 12px; }
+    .chart-title { font-size: 13px; font-weight: 600; margin-bottom: 14px; }
+
+    .type-rows { display: flex; flex-direction: column; gap: 10px; }
+    .type-row { display: flex; align-items: center; gap: 8px; }
+    .type-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .type-name { font-size: 12px; color: var(--text-2); flex: 1; }
+    .type-track { width: 90px; height: 7px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+    .type-fill { height: 100%; border-radius: 4px; }
+    .type-pct { font-size: 11px; color: var(--text-3); width: 32px; text-align: right; }
+
+    .bar-rows { display: flex; flex-direction: column; gap: 9px; }
+    .bar-row { display: flex; align-items: center; gap: 8px; }
+    .bar-name { font-size: 11px; color: var(--text-2); width: 106px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar-track { flex: 1; height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 4px; }
+    .bar-val { font-size: 11px; color: var(--text-3); width: 22px; text-align: right; }
+
+    .week-bars { display: flex; align-items: flex-end; gap: 5px; height: 60px; margin-bottom: 5px; }
+    .wbar { flex: 1; border-radius: 4px 4px 0 0; min-height: 4px; }
+    .week-days { display: flex; gap: 5px; }
+    .wday { flex: 1; font-size: 10px; color: var(--text-3); text-align: center; }
+
+    /* ── PROFILE SCREEN ── */
+    #screen-profile { background: var(--bg); }
+    .profile-header {
+      background: var(--surface); padding: 16px; border-bottom: 0.5px solid var(--border-strong);
+      display: flex; align-items: center; gap: 14px;
+    }
+    .avatar {
+      width: 54px; height: 54px; border-radius: 50%;
+      background: var(--red-light); border: 2px solid var(--red-border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; font-weight: 600; color: var(--red); flex-shrink: 0;
+    }
+    .p-name { font-size: 17px; font-weight: 600; }
+    .p-since { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+    .p-mini { display: flex; gap: 16px; margin-top: 8px; }
+    .pstat { text-align: center; }
+    .pnum { font-size: 16px; font-weight: 600; display: block; }
+    .plbl { font-size: 10px; color: var(--text-3); }
+    .profile-body { padding: 16px; }
+    .sec-title { font-size: 11px; color: var(--text-3); margin-bottom: 10px; font-weight: 500; letter-spacing: 0.4px; text-transform: uppercase; }
+
+    /* Reward cards */
+    .rew-card { border-radius: var(--radius); margin-bottom: 10px; overflow: hidden; border: 0.5px solid var(--border); }
+    .rew-card.unlocked { border-color: #e8a040; }
+    .rew-head { padding: 12px 14px; display: flex; align-items: flex-start; gap: 12px; }
+    .rew-head.u { background: #fef6e8; }
+    .rew-head.l { background: var(--surface); }
+    .rew-icon {
+      width: 42px; height: 42px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .rew-icon.a { background: #f5a623; }
+    .rew-icon.i { background: var(--surface-2); border: 0.5px solid var(--border-strong); }
+    .rew-icon i { font-size: 21px; }
+    .rew-icon.a i { color: #fff; }
+    .rew-icon.i i { color: var(--text-3); }
+    .rew-brand { font-size: 10px; font-weight: 600; margin-bottom: 2px; }
+    .rew-brand.u { color: #9a6a10; }
+    .rew-brand.l { color: var(--text-3); }
+    .rew-title { font-size: 13px; font-weight: 500; line-height: 1.3; }
+    .rew-title.u { color: #5a3a05; }
+    .rew-title.l { color: var(--text-2); }
+    .rew-badge {
+      margin-left: auto; font-size: 10px; font-weight: 600;
+      padding: 4px 9px; border-radius: 20px; flex-shrink: 0;
+      display: flex; align-items: center; gap: 3px;
+    }
+    .rew-badge.a { background: #f5a623; color: #fff; }
+    .rew-badge.i { background: var(--surface-2); color: var(--text-3); border: 0.5px solid var(--border-strong); }
+    .rew-promo {
+      background: #fef0d0; padding: 9px 14px; border-top: 0.5px solid #f5d888;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .promo-lbl { font-size: 9px; color: #9a6a10; margin-bottom: 2px; }
+    .promo-code { font-size: 14px; font-weight: 600; color: #7a4f00; letter-spacing: 1px; }
+    .copy-btn {
+      font-size: 11px; color: #9a6a10; background: none; border: none;
+      cursor: pointer; display: flex; align-items: center; gap: 3px; font-family: inherit; padding: 6px 0;
+    }
+    .rew-prog { padding: 0 14px 12px; background: var(--surface); }
+    .prog-track { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin-bottom: 5px; border: 0.5px solid var(--border); }
+    .prog-fill { height: 100%; border-radius: 3px; background: var(--red); transition: width 0.4s ease; }
+    .prog-meta { font-size: 10px; color: var(--text-3); display: flex; justify-content: space-between; }
+    .prog-tip { color: var(--red); font-weight: 500; }
+
+    .hist-list { display: flex; flex-direction: column; }
+    .hist-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--border); }
+    .hist-item:last-child { border-bottom: none; }
+    .hdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .htext { flex: 1; }
+    .htitle { font-size: 12px; font-weight: 500; }
+    .hsub { font-size: 10px; color: var(--text-3); margin-top: 1px; }
+    .htime { font-size: 10px; color: var(--text-3); }
+
+    .set-list { background: var(--surface); border-radius: var(--radius); overflow: hidden; border: 0.5px solid var(--border); }
+    .set-row { display: flex; align-items: center; justify-content: space-between; padding: 13px 14px; border-bottom: 0.5px solid var(--border); cursor: pointer; }
+    .set-row:last-child { border-bottom: none; }
+    .set-left { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+    .set-left i { font-size: 18px; color: var(--text-3); }
+    .set-row.danger .set-left { color: var(--red); }
+    .set-row.danger .set-left i { color: var(--red); }
+
+    /* ── TOAST ── */
+    #toast {
+      position: absolute; bottom: calc(var(--tab-h) + 16px); left: 50%;
+      transform: translateX(-50%) translateY(16px);
+      background: rgba(26,22,18,0.88); color: #fff;
+      padding: 10px 20px; border-radius: 20px; font-size: 13px;
+      white-space: nowrap; z-index: 2000;
+      opacity: 0; transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* pulse animation on confirm */
+    @keyframes pulse { 0%{transform:scale(1)} 50%{transform:scale(1.04)} 100%{transform:scale(1)} }
+    .pulse { animation: pulse 0.3s ease; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════════════════════════
+       ЭКРАН: КАРТА
+  ══════════════════════════════ -->
+  <div id="screen-map" class="screen active">
+    <div id="map"></div>
+    <div class="map-top">
+      <div class="search-box">
+        <i class="ti ti-search"></i>
+        <span>Найти улицу в Новосибирске…</span>
+      </div>
+    </div>
+    <div class="map-fabs">
+      <div class="fab"><i class="ti ti-layers-subtract"></i></div>
+      <div class="fab" id="locate-btn"><i class="ti ti-current-location"></i></div>
+    </div>
+    <div class="map-bottom">
+      <div class="drag-handle"></div>
+      <div class="legend-row">
+        <div class="legend-item"><div class="legend-dot" style="background:#c0392b"></div>Яма</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#e67e22"></div>Разбитый участок</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#d4ac0d"></div>Ухаб</div>
+      </div>
+      <div class="stats-mini">
+        <div class="smc"><span class="smc-num" id="total-count">847</span><span class="smc-label">отметок</span></div>
+        <div class="smc"><span class="smc-num">312</span><span class="smc-label">улиц</span></div>
+        <div class="smc"><span class="smc-num" id="week-count">94</span><span class="smc-label">за неделю</span></div>
+      </div>
+      <button class="report-btn" id="add-btn">
+        <i class="ti ti-plus"></i> Отметить повреждение
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════
+       ЭКРАН: СТАТИСТИКА
+  ══════════════════════════════ -->
+  <div id="screen-stats" class="screen">
+    <div class="screen-header"><div class="screen-title">Статистика</div></div>
+    <div class="stats-body">
+
+      <div class="big-grid">
+        <div class="big-card red">
+          <span class="big-num" id="stat-total">847</span>
+          <div class="big-lbl">отметок всего</div>
+        </div>
+        <div class="big-card">
+          <span class="big-num" id="stat-week">+94</span>
+          <div class="big-lbl">за эту неделю</div>
+        </div>
+        <div class="big-card">
+          <span class="big-num">312</span>
+          <div class="big-lbl">улиц в базе</div>
+        </div>
+        <div class="big-card">
+          <span class="big-num">2 184</span>
+          <div class="big-lbl">подтверждений</div>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">По типу повреждения</div>
+        <div class="type-rows">
+          <div class="type-row">
+            <div class="type-dot" style="background:#c0392b"></div>
+            <div class="type-name">Яма</div>
+            <div class="type-track"><div class="type-fill" style="width:62%;background:#c0392b"></div></div>
+            <div class="type-pct">62%</div>
+          </div>
+          <div class="type-row">
+            <div class="type-dot" style="background:#e67e22"></div>
+            <div class="type-name">Разбитый участок</div>
+            <div class="type-track"><div class="type-fill" style="width:25%;background:#e67e22"></div></div>
+            <div class="type-pct">25%</div>
+          </div>
+          <div class="type-row">
+            <div class="type-dot" style="background:#d4ac0d"></div>
+            <div class="type-name">Ухаб</div>
+            <div class="type-track"><div class="type-fill" style="width:13%;background:#d4ac0d"></div></div>
+            <div class="type-pct">13%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">Топ улиц по числу отметок</div>
+        <div class="bar-rows">
+          <div class="bar-row"><div class="bar-name">Красный пр.</div><div class="bar-track"><div class="bar-fill" style="width:88%;background:#c0392b;opacity:0.85"></div></div><div class="bar-val">48</div></div>
+          <div class="bar-row"><div class="bar-name">ул. Ленина</div><div class="bar-track"><div class="bar-fill" style="width:70%;background:#c0392b;opacity:0.7"></div></div><div class="bar-val">38</div></div>
+          <div class="bar-row"><div class="bar-name">ул. Мира</div><div class="bar-track"><div class="bar-fill" style="width:54%;background:#c0392b;opacity:0.6"></div></div><div class="bar-val">29</div></div>
+          <div class="bar-row"><div class="bar-name">пр. Маркса</div><div class="bar-track"><div class="bar-fill" style="width:40%;background:#c0392b;opacity:0.5"></div></div><div class="bar-val">22</div></div>
+          <div class="bar-row"><div class="bar-name">ул. Б. Хмельницкого</div><div class="bar-track"><div class="bar-fill" style="width:28%;background:#c0392b;opacity:0.4"></div></div><div class="bar-val">15</div></div>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">Активность за 7 дней</div>
+        <div class="week-bars">
+          <div class="wbar" style="height:42%;background:#f0c4be"></div>
+          <div class="wbar" style="height:60%;background:#e89080"></div>
+          <div class="wbar" style="height:35%;background:#f0c4be"></div>
+          <div class="wbar" style="height:83%;background:#c0392b"></div>
+          <div class="wbar" style="height:56%;background:#e08070"></div>
+          <div class="wbar" style="height:93%;background:#c0392b"></div>
+          <div class="wbar" style="height:46%;background:#e08070"></div>
+        </div>
+        <div class="week-days">
+          <div class="wday">Пн</div><div class="wday">Вт</div><div class="wday">Ср</div>
+          <div class="wday">Чт</div><div class="wday">Пт</div><div class="wday">Сб</div><div class="wday">Вс</div>
+        </div>
+      </div>
+
+      <div style="height:20px"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════
+       ЭКРАН: ПРОФИЛЬ
+  ══════════════════════════════ -->
+  <div id="screen-profile" class="screen">
+    <div class="profile-header">
+      <div class="avatar">ДА</div>
+      <div>
+        <div class="p-name">Дмитрий А.</div>
+        <div class="p-since">участник с марта 2025</div>
+        <div class="p-mini">
+          <div class="pstat"><span class="pnum" id="p-marks">43</span><span class="plbl">отметок</span></div>
+          <div class="pstat"><span class="pnum">128</span><span class="plbl">подтверждений</span></div>
+          <div class="pstat"><span class="pnum">7</span><span class="plbl">улиц</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="profile-body">
+
+      <div class="sec-title">Мои награды</div>
+
+      <!-- Разблокированная: Газпромнефть -->
+      <div class="rew-card unlocked">
+        <div class="rew-head u">
+          <div class="rew-icon a"><i class="ti ti-fuel"></i></div>
+          <div style="flex:1">
+            <div class="rew-brand u">Газпромнефть</div>
+            <div class="rew-title u">−2 ₽ за литр топлива на любой АЗС</div>
+          </div>
+          <div class="rew-badge a"><i class="ti ti-check" style="font-size:10px"></i> Получено</div>
+        </div>
+        <div class="rew-promo">
+          <div>
+            <div class="promo-lbl">Промокод</div>
+            <div class="promo-code">DOROG-GPN-4K2M</div>
+          </div>
+          <button class="copy-btn" onclick="copyPromo()">
+            <i class="ti ti-copy" style="font-size:14px"></i> Скопировать
+          </button>
+        </div>
+      </div>
+
+      <!-- В прогрессе: парковка -->
+      <div class="rew-card" style="margin-bottom:20px">
+        <div class="rew-head l">
+          <div class="rew-icon i"><i class="ti ti-parking"></i></div>
+          <div style="flex:1">
+            <div class="rew-brand l">Новосибирск — муниципальные парковки</div>
+            <div class="rew-title l">Месяц бесплатных парковок</div>
+          </div>
+          <div class="rew-badge i"><i class="ti ti-lock" style="font-size:10px"></i> 50 отметок</div>
+        </div>
+        <div class="rew-prog">
+          <div class="prog-track">
+            <div class="prog-fill" id="prog-fill" style="width:86%"></div>
+          </div>
+          <div class="prog-meta">
+            <span id="prog-label">43 из 50 отметок</span>
+            <span class="prog-tip" id="prog-tip">ещё 7 — и награда ваша</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec-title">Последние отметки</div>
+      <div class="chart-card" style="padding:0 14px;margin-bottom:16px">
+        <div class="hist-list" id="hist-list">
+          <div class="hist-item">
+            <div class="hdot" style="background:#c0392b"></div>
+            <div class="htext"><div class="htitle">Яма — Красный пр., 22</div><div class="hsub">12 подтверждений</div></div>
+            <div class="htime">3 дня</div>
+          </div>
+          <div class="hist-item">
+            <div class="hdot" style="background:#e67e22"></div>
+            <div class="htext"><div class="htitle">Разбитый участок — ул. Мира</div><div class="hsub">5 подтверждений</div></div>
+            <div class="htime">1 нед</div>
+          </div>
+          <div class="hist-item">
+            <div class="hdot" style="background:#c0392b"></div>
+            <div class="htext"><div class="htitle">Яма — ул. Ленина, 12</div><div class="hsub">8 подтверждений</div></div>
+            <div class="htime">2 нед</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec-title">Настройки</div>
+      <div class="set-list">
+        <div class="set-row">
+          <div class="set-left"><i class="ti ti-bell"></i> Уведомления</div>
+          <i class="ti ti-chevron-right" style="font-size:15px;color:var(--text-3)"></i>
+        </div>
+        <div class="set-row" onclick="shareApp()">
+          <div class="set-left"><i class="ti ti-share"></i> Поделиться приложением</div>
+          <i class="ti ti-chevron-right" style="font-size:15px;color:var(--text-3)"></i>
+        </div>
+        <div class="set-row danger">
+          <div class="set-left"><i class="ti ti-logout"></i> Выйти</div>
+        </div>
+      </div>
+
+      <div style="height:24px"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════
+       ПОПАП: ДЕТАЛИ ПОВРЕЖДЕНИЯ
+  ══════════════════════════════ -->
+  <div id="popup-overlay">
+    <div class="popup-dim" onclick="closePopup()"></div>
+    <div class="popup-sheet">
+      <div class="popup-drag"></div>
+
+      <!-- фото -->
+      <div class="popup-photos">
+        <div class="photo-main">
+          <svg viewBox="0 0 145 100" xmlns="http://www.w3.org/2000/svg">
+            <rect width="145" height="100" fill="#5a5040"/>
+            <rect x="0" y="50" width="145" height="50" fill="#4a4438"/>
+            <rect x="0" y="44" width="145" height="8" fill="#5a5040"/>
+            <ellipse cx="73" cy="75" rx="32" ry="15" fill="#2e2820"/>
+            <ellipse cx="73" cy="73" rx="27" ry="12" fill="#1e1a12"/>
+            <ellipse cx="70" cy="74" rx="16" ry="7" fill="#1a2830" opacity="0.55"/>
+            <line x1="43" y1="63" x2="34" y2="56" stroke="#2a2418" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="103" y1="62" x2="112" y2="55" stroke="#2a2418" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="55" y1="85" x2="46" y2="94" stroke="#2a2418" stroke-width="1.2" stroke-linecap="round"/>
+            <polygon points="44,78 53,73 57,82 48,86" fill="#3a3530"/>
+            <polygon points="89,76 98,72 102,80 93,84" fill="#3a3530"/>
+            <rect x="0" y="0" width="145" height="50" fill="#7090a8"/>
+            <rect x="28" y="44" width="90" height="7" fill="#5a5040" opacity="0.8"/>
+            <rect x="0" y="42" width="28" height="7" fill="#8a9a70"/>
+            <rect x="118" y="42" width="27" height="7" fill="#8a9a70"/>
+            <rect x="60" y="24" width="8" height="18" rx="4" fill="#f5e090" opacity="0.7"/>
+            <rect x="78" y="24" width="8" height="18" rx="4" fill="#f5e090" opacity="0.7"/>
+          </svg>
+          <div class="photo-count" id="popup-photo-count">1 / 3</div>
+        </div>
+        <div class="photo-side">
+          <div class="photo-thumb">
+            <svg viewBox="0 0 64 46" xmlns="http://www.w3.org/2000/svg">
+              <rect width="64" height="46" fill="#4a4438"/>
+              <ellipse cx="32" cy="30" rx="19" ry="10" fill="#1e1a12"/>
+              <rect x="0" y="0" width="64" height="18" fill="#6a8aa0"/>
+              <rect x="0" y="16" width="64" height="4" fill="#8a9a70"/>
+            </svg>
+          </div>
+          <div class="photo-thumb">
+            <svg viewBox="0 0 64 46" xmlns="http://www.w3.org/2000/svg">
+              <rect width="64" height="46" fill="#5a5040"/>
+              <ellipse cx="30" cy="32" rx="15" ry="8" fill="#1a1810"/>
+              <line x1="17" y1="25" x2="10" y2="18" stroke="#2a2418" stroke-width="1.2" stroke-linecap="round"/>
+              <line x1="44" y1="24" x2="51" y2="17" stroke="#2a2418" stroke-width="1" stroke-linecap="round"/>
+              <rect x="0" y="0" width="64" height="17" fill="#8a9a70"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- тело попапа -->
+      <div class="popup-body">
+        <div class="badge-row">
+          <span class="badge badge-red" id="pp-type">Яма</span>
+          <span class="badge badge-gray" id="pp-sev">Глубокая</span>
+          <span class="badge badge-green" id="pp-conf">Подтверждено ×12</span>
+        </div>
+        <div class="popup-title" id="pp-title">Яма на проезжей части</div>
+        <div class="popup-addr">
+          <i class="ti ti-map-pin"></i>
+          <span id="pp-addr">Красный проспект, 22</span>
+        </div>
+        <div class="meta-grid">
+          <div>
+            <div class="meta-label">Размер</div>
+            <div class="meta-value"><i class="ti ti-arrows-diagonal"></i><span id="pp-size">~40×25 см</span></div>
+          </div>
+          <div>
+            <div class="meta-label">Глубина</div>
+            <div class="meta-value"><i class="ti ti-trending-down"></i><span id="pp-depth">≈8 см</span></div>
+          </div>
+          <div>
+            <div class="meta-label">Добавлено</div>
+            <div class="meta-value"><i class="ti ti-clock"></i><span id="pp-date">3 дня назад</span></div>
+          </div>
+          <div>
+            <div class="meta-label">Полоса</div>
+            <div class="meta-value"><i class="ti ti-road"></i><span id="pp-lane">Правая, крайняя</span></div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="comments-title" id="pp-comm-title">Комментарии (2)</div>
+        <div id="pp-comments"></div>
+      </div>
+
+      <div class="popup-actions">
+        <button class="btn-sec" onclick="shareMarker()"><i class="ti ti-share"></i> Поделиться</button>
+        <button class="btn-prime" id="confirm-btn" onclick="confirmMarker()">
+          <i class="ti ti-check"></i> Подтвердить
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════
+       МОДАЛ: ДОБАВИТЬ ОТМЕТКУ
+  ══════════════════════════════ -->
+  <div id="add-modal">
+    <div class="modal-dim" onclick="closeAddModal()"></div>
+    <div class="modal-sheet">
+      <div class="drag-handle"></div>
+      <div class="modal-title">Новая отметка</div>
+
+      <div class="form-label">Тип повреждения</div>
+      <div class="type-grid">
+        <div class="type-btn sel-red" id="tb-pothole" onclick="selType('pothole')">
+          <i class="ti ti-alert-triangle" style="color:#c0392b"></i>
+          <span>Яма</span>
+        </div>
+        <div class="type-btn" id="tb-damaged" onclick="selType('damaged')">
+          <i class="ti ti-road" style="color:#e67e22"></i>
+          <span>Разбитый</span>
+        </div>
+        <div class="type-btn" id="tb-bump" onclick="selType('bump')">
+          <i class="ti ti-wave-sine" style="color:#d4ac0d"></i>
+          <span>Ухаб</span>
+        </div>
+      </div>
+
+      <div class="form-label">Адрес или ориентир</div>
+      <input type="text" class="form-input" id="add-address" placeholder="ул. Ленина, 22">
+
+      <div class="form-label">Комментарий (необязательно)</div>
+      <input type="text" class="form-input" id="add-comment" placeholder="Опишите повреждение">
+
+      <button class="report-btn" onclick="submitMarker()">
+        <i class="ti ti-map-pin"></i> Разместить на карте
+      </button>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <nav id="tabbar">
+    <div class="tab active" data-sc="map" onclick="showScreen('map')">
+      <i class="ti ti-map-2"></i><span>Карта</span>
+    </div>
+    <div class="tab" data-sc="stats" onclick="showScreen('stats')">
+      <i class="ti ti-chart-bar"></i><span>Статистика</span>
+    </div>
+    <div class="tab" data-sc="profile" onclick="showScreen('profile')">
+      <i class="ti ti-user"></i><span>Профиль</span>
+    </div>
+  </nav>
+
+  <div id="toast"></div>
+
+</div><!-- /app -->
+
+<!-- ══════════════════════════════
+     СКРИПТЫ
+══════════════════════════════ -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+/* ── ДАННЫЕ ── */
+const DB = [
+  { id:1, lat:54.9884, lng:82.9237, type:'pothole',
+    title:'Яма на проезжей части', addr:'Красный проспект, 22',
+    sev:'Глубокая', size:'~40×25 см', depth:'≈8 см',
+    date:'3 дня назад', lane:'Правая, крайняя', conf:12,
+    comments:[
+      {av:'АК', cls:'av-blue', name:'Алексей К.', text:'Пробил колесо здесь в прошлый вторник. Яма почти незаметна в темноте.', time:'2 дня назад'},
+      {av:'МС', cls:'av-green', name:'Марина С.', text:'Объезжаю через тротуар — опасно, рядом школа.', time:'1 день назад'}
+    ]},
+  { id:2, lat:54.9920, lng:82.9150, type:'damaged',
+    title:'Разбитый участок', addr:'ул. Ленина, 48',
+    sev:'Сильный', size:'~2×0.5 м', depth:'≈3 см',
+    date:'1 неделю назад', lane:'Оба направления', conf:5,
+    comments:[
+      {av:'ВП', cls:'av-blue', name:'Виктор П.', text:'Весь участок около 15 метров — не дорога, а стиральная доска.', time:'5 дней назад'}
+    ]},
+  { id:3, lat:54.9848, lng:82.9310, type:'pothole',
+    title:'Глубокая яма у люка', addr:'ул. Мира, 14',
+    sev:'Глубокая', size:'~30×20 см', depth:'≈10 см',
+    date:'2 дня назад', lane:'Правая', conf:8,
+    comments:[]},
+  { id:4, lat:54.9960, lng:82.9200, type:'bump',
+    title:'Ухаб после ремонта', addr:'пр. Маркса, 7',
+    sev:'Небольшой', size:'~1 м', depth:'≈2 см',
+    date:'5 дней назад', lane:'Левая', conf:3,
+    comments:[
+      {av:'ОА', cls:'av-green', name:'Ольга А.', text:'После весеннего ремонта шов вспучился — трясёт ощутимо.', time:'4 дня назад'}
+    ]},
+  { id:5, lat:54.9870, lng:82.9100, type:'pothole',
+    title:'Яма в правом ряду', addr:'ул. Блюхера, 32',
+    sev:'Средняя', size:'~25×20 см', depth:'≈6 см',
+    date:'1 неделю назад', lane:'Правая, крайняя', conf:6,
+    comments:[]},
+  { id:6, lat:54.9940, lng:82.9350, type:'damaged',
+    title:'Разбитый перекрёсток', addr:'ул. Дуси Ковальчук / Красный пр.',
+    sev:'Сильный', size:'~5×3 м', depth:'≈4 см',
+    date:'3 дня назад', lane:'Весь перекрёсток', conf:19,
+    comments:[
+      {av:'ДМ', cls:'av-blue', name:'Денис М.', text:'Постоянные пробки — все объезжают через соседний ряд.', time:'2 дня назад'},
+      {av:'АС', cls:'av-purple', name:'Аня С.', text:'Написала в городскую службу — ответили «возьмём в работу».', time:'1 день назад'}
+    ]},
+  { id:7, lat:54.9900, lng:82.9400, type:'bump',
+    title:'Ухаб перед светофором', addr:'ул. Гоголя, 15',
+    sev:'Средний', size:'~80 см', depth:'≈3 см',
+    date:'4 дня назад', lane:'Оба ряда', conf:4,
+    comments:[]},
+];
+
+/* ── СОСТОЯНИЕ ── */
+let map, activeId = null, selType_ = 'pothole', userMarks = 43;
+
+/* ── КАРТА ── */
+function initMap() {
+  map = L.map('map', { zoomControl:false, attributionControl:true })
+    .setView([54.9900, 82.9220], 13);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© OpenStreetMap'
+  }).addTo(map);
+
+  L.control.zoom({ position:'topright' }).addTo(map);
+
+  DB.forEach(putMarker);
+  map.on('click', () => closePopup());
+}
+
+function makeIcon(type) {
+  const col = { pothole:'#c0392b', damaged:'#e67e22', bump:'#d4ac0d' }[type] || '#c0392b';
+  const ico = { pothole:'ti-alert-triangle', damaged:'ti-road', bump:'ti-wave-sine' }[type] || 'ti-alert-triangle';
+  return L.divIcon({
+    className: 'custom-marker',
+    html: `<div class="marker-pin" style="background:${col}"><i class="ti ${ico}"></i></div><div class="marker-shadow"></div>`,
+    iconSize: [30, 40],
+    iconAnchor: [15, 40],
+    popupAnchor: [0, -42]
+  });
+}
+
+function putMarker(d) {
+  L.marker([d.lat, d.lng], { icon: makeIcon(d.type) })
+    .addTo(map)
+    .on('click', e => { L.DomEvent.stopPropagation(e); openPopup(d); });
+}
+
+/* ── НАВИГАЦИЯ ── */
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  document.querySelector(`[data-sc="${name}"]`).classList.add('active');
+  if (name === 'map') setTimeout(() => map && map.invalidateSize(), 60);
+}
+
+/* ── ПОПАП ── */
+function openPopup(d) {
+  activeId = d.id;
+
+  const typeLabel = { pothole:'Яма', damaged:'Разбитый участок', bump:'Ухаб' };
+  document.getElementById('pp-type').textContent = typeLabel[d.type] || d.type;
+  document.getElementById('pp-sev').textContent = d.sev;
+  document.getElementById('pp-conf').textContent = `Подтверждено ×${d.conf}`;
+  document.getElementById('pp-title').textContent = d.title;
+  document.getElementById('pp-addr').textContent = d.addr;
+  document.getElementById('pp-size').textContent = d.size;
+  document.getElementById('pp-depth').textContent = d.depth;
+  document.getElementById('pp-date').textContent = d.date;
+  document.getElementById('pp-lane').textContent = d.lane;
+  document.getElementById('pp-comm-title').textContent = `Комментарии (${d.comments.length})`;
+
+  document.getElementById('pp-comments').innerHTML = d.comments.length
+    ? d.comments.map(c => `
+        <div class="comment">
+          <div class="c-avatar ${c.cls}">${c.av}</div>
+          <div class="c-bubble">
+            <div class="c-author">${c.name}</div>
+            <div class="c-text">${c.text}</div>
+            <div class="c-time">${c.time}</div>
+          </div>
+        </div>`).join('')
+    : `<p style="font-size:12px;color:var(--text-3);padding:4px 0 12px">Комментариев пока нет — будьте первым</p>`;
+
+  const btn = document.getElementById('confirm-btn');
+  btn.innerHTML = '<i class="ti ti-check"></i> Подтвердить';
+  btn.style.background = 'var(--red)';
+
+  document.getElementById('popup-overlay').classList.add('open');
+}
+
+function closePopup() {
+  document.getElementById('popup-overlay').classList.remove('open');
+  activeId = null;
+}
+
+function confirmMarker() {
+  if (!activeId) return;
+  const d = DB.find(x => x.id === activeId);
+  if (!d) return;
+  d.conf++;
+  document.getElementById('pp-conf').textContent = `Подтверждено ×${d.conf}`;
+  const btn = document.getElementById('confirm-btn');
+  btn.innerHTML = '<i class="ti ti-check"></i> Подтверждено';
+  btn.style.background = '#27ae60';
+  btn.classList.add('pulse');
+  setTimeout(() => btn.classList.remove('pulse'), 400);
+  toast('Подтверждение добавлено');
+}
+
+function shareMarker() {
+  if (navigator.share) {
+    navigator.share({ title:'Дорог.нет', text:'Смотри — нашёл повреждение на карте', url:location.href });
+  } else {
+    navigator.clipboard?.writeText(location.href);
+    toast('Ссылка скопирована');
+  }
+}
+
+/* ── ДОБАВИТЬ ОТМЕТКУ ── */
+document.getElementById('add-btn').onclick = () => document.getElementById('add-modal').classList.add('open');
+
+function closeAddModal() { document.getElementById('add-modal').classList.remove('open'); }
+
+function selType(t) {
+  selType_ = t;
+  ['pothole','damaged','bump'].forEach(k => {
+    document.getElementById('tb-'+k).className = 'type-btn';
+  });
+  const cls = { pothole:'sel-red', damaged:'sel-orange', bump:'sel-yellow' }[t];
+  document.getElementById('tb-'+t).classList.add(cls);
+}
+
+function submitMarker() {
+  const addr = document.getElementById('add-address').value.trim() || 'Новосибирск';
+  const c = map.getCenter();
+  const newD = {
+    id: Date.now(),
+    lat: c.lat + (Math.random()-.5)*0.006,
+    lng: c.lng + (Math.random()-.5)*0.006,
+    type: selType_,
+    title: { pothole:'Яма на проезжей части', damaged:'Разбитый участок', bump:'Ухаб' }[selType_],
+    addr, sev:'Новое', size:'—', depth:'—', date:'только что', lane:'—', conf:0, comments:[]
+  };
+
+  DB.push(newD);
+  putMarker(newD);
+
+  // обновляем счётчики
+  userMarks++;
+  document.getElementById('p-marks').textContent = userMarks;
+  document.getElementById('total-count').textContent = 847 + (userMarks - 43);
+  document.getElementById('stat-total').textContent = 847 + (userMarks - 43);
+  updateProgress();
+
+  // история в профиле
+  const col = { pothole:'#c0392b', damaged:'#e67e22', bump:'#d4ac0d' }[selType_];
+  const lbl = { pothole:'Яма', damaged:'Разбитый участок', bump:'Ухаб' }[selType_];
+  const item = document.createElement('div');
+  item.className = 'hist-item';
+  item.innerHTML = `<div class="hdot" style="background:${col}"></div><div class="htext"><div class="htitle">${lbl} — ${addr}</div><div class="hsub">0 подтверждений</div></div><div class="htime">сейчас</div>`;
+  document.getElementById('hist-list').prepend(item);
+
+  closeAddModal();
+  document.getElementById('add-address').value = '';
+  document.getElementById('add-comment').value = '';
+  toast('Отметка добавлена на карту!');
+
+  if (userMarks === 10) setTimeout(() => toast('Разблокирована награда: −2 ₽/литр на Газпромнефть!'), 600);
+  if (userMarks === 50) setTimeout(() => toast('Разблокирована награда: месяц бесплатных парковок!'), 600);
+}
+
+function updateProgress() {
+  const pct = Math.min(userMarks / 50 * 100, 100);
+  document.getElementById('prog-fill').style.width = pct + '%';
+  document.getElementById('prog-label').textContent = `${userMarks} из 50 отметок`;
+  const left = Math.max(50 - userMarks, 0);
+  document.getElementById('prog-tip').textContent = left > 0
+    ? `ещё ${left} — и награда ваша` : '🎉 Награда разблокирована!';
+}
+
+/* ── ПРОМОКОД ── */
+function copyPromo() {
+  navigator.clipboard?.writeText('DOROG-GPN-4K2M');
+  toast('Промокод скопирован');
+}
+
+/* ── ПОДЕЛИТЬСЯ ── */
+function shareApp() {
+  if (navigator.share) {
+    navigator.share({ title:'Дорог.нет', text:'Народная карта дорог Новосибирска', url:location.href });
+  } else {
+    navigator.clipboard?.writeText(location.href);
+    toast('Ссылка скопирована');
+  }
+}
+
+/* ── ГЕОЛОКАЦИЯ ── */
+document.getElementById('locate-btn').onclick = () => {
+  if (!navigator.geolocation) return toast('Геолокация недоступна в браузере');
+  navigator.geolocation.getCurrentPosition(
+    p => map.setView([p.coords.latitude, p.coords.longitude], 16),
+    () => toast('Не удалось определить местоположение')
+  );
+};
+
+/* ── TOAST ── */
+let _toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+/* ── СТАРТ ── */
+initMap();
+
+</script>
+</body>
+</html>
